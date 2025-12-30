@@ -1,14 +1,11 @@
-from django.shortcuts import render
 from .models import Book, Author
 from .serializers import BookSerializer, AuthorSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.generics import ListAPIView, RetrieveAPIView
-from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.generics import ListAPIView
 from rest_framework import filters
 from .utils.custom_pagination import CustomPageNumberPagination
-
+from django.db.models import Q
 
 class AuthorCreateView(APIView):
     def post(self, request):
@@ -42,18 +39,31 @@ class BookCreateView(APIView):
 
 
 
-class BookListView(ListAPIView):
-    serializer_class = BookSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['author__name']
-    search_fields = ['title', 'author__name']
-    ordering_fields = ['published_date', 'created_at'] 
+class BookListAPIView(APIView):
     pagination_class = CustomPageNumberPagination
 
-    def get_queryset(self):
+    def get(self, request):
+        qs = Book.objects.select_related("author").filter(is_archived=False)
 
-        return Book.objects.select_related('author').filter(is_archived=False)
+        if author := request.query_params.get("author"):
+            qs = qs.filter(author__name__icontains=author)
 
+        if search := request.query_params.get("search"):
+            qs = qs.filter(
+                Q(title__icontains=search) |
+                Q(author__name__icontains=search)
+            )
+
+        ordering = request.query_params.get("ordering", "-created_at")
+        if ordering in ["published_date", "-published_date", "created_at", "-created_at"]:
+            qs = qs.order_by(ordering)
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request)
+
+        return paginator.get_paginated_response(
+            BookSerializer(page, many=True).data
+        )
 
 class AuthorListView(ListAPIView):
     serializer_class = AuthorSerializer
