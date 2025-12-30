@@ -1,0 +1,7 @@
+djangorestframework
+django-filter
+celery 
+redis 
+django-celery-beat
+gunicorn
+python-dotenv
